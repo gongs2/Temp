@@ -1,0 +1,514 @@
+--**********************************************************************************
+--Post-Installation_Script-New-Sefaw.sql ,, Created by Sefaw on May 14 for all new servers
+-- the old scripts no longer will be used
+-- This script will not add Partner Role, change ports and SetMemory
+-- 1- This script will sa-configurations-msdb-tempdb
+-- 2- This script will add basic server Audit
+-- 3- This script will Configure SMTP
+-- 4- This script will create sysAdminDB
+-- 5- This script will add App accounts
+-- 6- SCOM script to grant permission to SCOM server
+-- Please restart SQL server after running this script.
+--*************************************************************************************
+
+--1- This script will sa-configurations-msdb-tempdb
+USE [master]
+GO
+-------------------------------------------------
+-- SQL Server Security Hardening
+-------------------------------------------------
+
+ALTER LOGIN [sa] WITH CHECK_EXPIRATION=OFF, CHECK_POLICY=ON
+GO
+ALTER LOGIN [sa] DISABLE
+GO
+-------------------------------------------------
+-- SQL Server Base Configuration and Advanced Options
+-- Fixed configurations
+-------------------------------------------------
+
+EXEC sp_configure 'show advanced options', '1'
+RECONFIGURE WITH OVERRIDE
+GO
+EXEC sp_configure 'Database Mail XPs', 1
+RECONFIGURE WITH OVERRIDE
+GO
+EXEC sp_configure 'clr enabled', 1
+RECONFIGURE WITH OVERRIDE
+GO
+EXEC sp_configure 'Agent XPs', 1
+RECONFIGURE WITH OVERRIDE
+GO
+EXEC sp_configure 'blocked process threshold (s)',5
+RECONFIGURE WITH OVERRIDE
+GO
+EXEC sp_configure N'remote admin connections', 1
+RECONFIGURE WITH OVERRIDE
+GO
+EXEC sp_configure N'optimize for ad hoc workloads', 1
+RECONFIGURE WITH OVERRIDE
+GO
+sp_configure 'scan for startup procs',1
+RECONFIGURE WITH OVERRIDE;
+GO
+-------------------------------------------------
+--
+-- SQL Server Base Configuration and Advanced Options
+-- Changable configurations
+-------------------------------------------------
+/*
+recovery interval (min)
+fill factor (%)
+disallow results from triggers
+nested triggers
+server trigger recursion
+cross db ownership chaining
+network packet size (B)
+cost threshold for parallelism
+max degree of parallelism
+scan for startup procs
+blocked process threshold (s)
+filestream access level
+optimize for ad hoc workloads
+contained database authentication
+*/
+/*Take parameters from the calling script*/
+DECLARE @recoveryInterval TINYINT;
+DECLARE @fillFactor TINYINT;
+DECLARE @disallowResultsfromTriggers TINYINT;
+DECLARE @nestedTriggers TINYINT;
+DECLARE @serverTriggersRecursion TINYINT;
+DECLARE @crossDBOwnership TINYINT;
+DECLARE @networkPacketSize INT;
+DECLARE @costThresholdOfParallelism TINYINT;
+DECLARE @MDOP TINYINT;
+DECLARE @scanforStartupProcs TINYINT;
+DECLARE @blockedProcessThreshold TINYINT;
+DECLARE @fileStreamAccessLevel TINYINT;
+DECLARE @optimizeforAdhoc TINYINT;
+DECLARE @containedDatabases TINYINT;
+
+
+SET @recoveryInterval=''
+SET @fillFactor ='90'
+SET @disallowResultsfromTriggers=''
+SET @nestedTriggers=''
+SET @serverTriggersRecursion=''
+SET @crossDBOwnership=''
+SET @networkPacketSize='8192'
+SET @costThresholdOfParallelism=''
+SET @MDOP='4'
+SET @scanforStartupProcs=''
+SET @blockedProcessThreshold='3'
+SET @fileStreamAccessLevel=''
+SET @optimizeforAdhoc=''
+SET @containedDatabases=''
+
+IF  @recoveryInterval <> ''
+BEGIN
+	EXEC sys.sp_configure 'recovery interval (min)',@recoveryInterval
+	RECONFIGURE
+END
+
+IF @fillFactor <> ''
+BEGIN
+	EXEC sys.sp_configure 'fill factor (%)',@fillFactor
+	RECONFIGURE
+END 
+
+IF @disallowResultsfromTriggers <> ''
+BEGIN
+	EXEC sys.sp_configure 'disallow results from triggers',@disallowResultsfromTriggers
+	RECONFIGURE
+END 
+
+IF @nestedTriggers <> ''
+BEGIN
+	EXEC sys.sp_configure 'nested triggers',@nestedTriggers
+	RECONFIGURE
+END 
+
+IF @serverTriggersRecursion <> ''
+BEGIN
+EXEC sys.sp_configure 'server trigger recursion',@serverTriggersRecursion
+	RECONFIGURE
+END 
+
+IF @crossDBOwnership <> ''
+BEGIN
+	EXEC sys.sp_configure 'cross db ownership chaining',@crossDBOwnership
+	RECONFIGURE
+END 
+
+IF @networkPacketSize <> ''
+BEGIN
+	EXEC sys.sp_configure 'network packet size (B)',@networkPacketSize
+	RECONFIGURE
+END 
+
+IF @costThresholdOfParallelism <> ''
+BEGIN
+	EXEC sys.sp_configure 'cost threshold for parallelism',@costThresholdOfParallelism
+	RECONFIGURE
+END 
+
+IF @MDOP <> ''
+BEGIN
+	EXEC sys.sp_configure 'max degree of parallelism',@MDOP 
+	RECONFIGURE
+END 
+
+IF @scanforStartupProcs <> ''
+BEGIN
+	EXEC sys.sp_configure 'scan for startup procs',@scanforStartupProcs
+	RECONFIGURE
+END 
+
+IF @blockedProcessThreshold <> ''
+BEGIN
+	EXEC sys.sp_configure 'blocked process threshold (s)',@blockedProcessThreshold
+	RECONFIGURE
+END 
+
+IF @fileStreamAccessLevel <> ''
+BEGIN
+	EXEC sys.sp_configure 'filestream access level',@fileStreamAccessLevel
+	RECONFIGURE
+END 
+
+IF @optimizeforAdhoc <> ''
+BEGIN
+	EXEC sys.sp_configure 'optimize for ad hoc workloads',@optimizeforAdhoc
+	RECONFIGURE
+END 
+
+IF @containedDatabases <> ''
+BEGIN
+	EXEC sys.sp_configure 'contained database authentication',@containedDatabases
+	RECONFIGURE
+END 
+
+--
+-- msdb
+--
+
+/* Expand msdb */
+ALTER DATABASE msdb MODIFY FILE (NAME = MSDBData, SIZE = 500)			-- 100 MB (default 17 MB)
+ALTER DATABASE msdb MODIFY FILE (NAME = MSDBLog, SIZE = 25)			-- 20 MB (default 20 MB)
+GO
+
+--****************************************************************************************************************************************************************
+-- 2- This script will add basic server Audit
+--****************************************************************************************************************************************************************
+
+-- to Create a new directory folder
+EXEC sp_configure 'xp_cmdshell', '1'
+RECONFIGURE WITH OVERRIDE
+GO
+
+EXEC xp_cmdshell 'MD D:\SQL-Auditing'
+
+EXEC sp_configure 'xp_cmdshell', '0'
+RECONFIGURE WITH OVERRIDE
+GO
+
+USE [master]
+GO
+
+CREATE SERVER AUDIT [SSC-SQL_Basic_Audit]
+TO FILE 
+(	FILEPATH = N'D:\SQL-Auditing'
+	,MAXSIZE = 1024 MB
+	,MAX_ROLLOVER_FILES = 10
+	,RESERVE_DISK_SPACE = OFF
+)
+WITH
+(	QUEUE_DELAY = 1000
+	,ON_FAILURE = CONTINUE
+)
+ALTER SERVER AUDIT [SSC-SQL_Basic_Audit] WITH (STATE = ON)
+GO
+
+USE [master]
+GO
+
+CREATE SERVER AUDIT SPECIFICATION [Normal_operation]
+FOR SERVER AUDIT [SSC-SQL_Basic_Audit]
+ADD (SERVER_ROLE_MEMBER_CHANGE_GROUP),
+ADD (FAILED_DATABASE_AUTHENTICATION_GROUP),
+ADD (DBCC_GROUP),
+ADD (SERVER_PERMISSION_CHANGE_GROUP),
+ADD (SERVER_PRINCIPAL_IMPERSONATION_GROUP),
+ADD (FAILED_LOGIN_GROUP),
+ADD (DATABASE_CHANGE_GROUP),
+ADD (DATABASE_PRINCIPAL_CHANGE_GROUP),
+ADD (SERVER_PRINCIPAL_CHANGE_GROUP),
+ADD (DATABASE_OPERATION_GROUP),
+ADD (SERVER_OPERATION_GROUP),
+ADD (LOGIN_CHANGE_PASSWORD_GROUP),
+ADD (DATABASE_OWNERSHIP_CHANGE_GROUP),
+ADD (TRACE_CHANGE_GROUP)
+WITH (STATE = ON)
+GO
+
+--****************************************************************************************************************************************************************
+-- 3- This script will Configure SMTP
+--****************************************************************************************************************************************************************
+--  Database Mail Simple Configuration Template.
+--
+--  This template creates a Database Mail profile, an SMTP account and 
+--  associates the account to the profile.
+--  The template does not grant access to the new profile for
+--  any database principals.  Use msdb.dbo.sysmail_add_principalprofile
+--  to grant access to the new profile for users who are not
+--  members of sysadmin.
+--
+--  This script takes these parameters
+--	accountName
+--	SMTPServerName
+--	emailAddress
+--	
+--
+-------------------------------------------------------------
+
+DECLARE @profile_name sysname,
+        @account_name sysname,
+        @SMTP_servername sysname,
+        @email_address NVARCHAR(128),
+	    @display_name NVARCHAR(128);
+
+-- Profile name. Replace with the name for your profile
+        SET @profile_name = 'EDC-MSSQL-Opps';
+
+-- Account information. Replace with the information for your account.
+
+		SET @account_name = 'EDC-SQL-Opps';
+		SET @SMTP_servername = 'SMTP-CDOQ.ds.gc.ca';
+		SET @email_address = 'noreplyCMS@ds.gc.ca';
+                SET @display_name = 'EDC-SQL-Server-email';
+
+
+-- Verify the specified account and profile do not already exist.
+IF EXISTS (SELECT * FROM msdb.dbo.sysmail_profile WHERE name = @profile_name)
+BEGIN
+  RAISERROR('The specified Database Mail profile %s already exists.', 16, 1,@profile_name);
+  GOTO done;
+END;
+
+IF EXISTS (SELECT * FROM msdb.dbo.sysmail_account WHERE name = @account_name )
+BEGIN
+ RAISERROR('The specified Database Mail account %s already exists.', 16, 1,@account_name) ;
+ GOTO done;
+END;
+
+-- Start a transaction before adding the account and the profile
+BEGIN TRANSACTION ;
+
+DECLARE @rv INT;
+
+-- Add the account
+EXECUTE @rv=msdb.dbo.sysmail_add_account_sp
+    @account_name = @account_name,
+    @email_address = @email_address,
+    @display_name = @display_name,
+    @mailserver_name = @SMTP_servername;
+
+IF @rv<>0
+BEGIN
+    RAISERROR('Failed to create the specified Database Mail account %s.', 16, 1,@account_name) ;
+    GOTO done;
+END
+
+-- Add the profile
+EXECUTE @rv=msdb.dbo.sysmail_add_profile_sp
+    @profile_name = @profile_name ;
+
+EXEC msdb.dbo.sp_set_sqlagent_properties 
+@databasemail_profile = @account_name;
+
+EXEC msdb.dbo.sp_add_operator @name=N'MSSQL-DBA', 
+		@enabled=1, 
+		@pager_days=0, 
+		@email_address= @email_address
+
+IF @rv<>0
+BEGIN
+    RAISERROR('Failed to create the specified Database Mail profile %s', 16, 1,@profile_name);
+	ROLLBACK TRANSACTION;
+    GOTO done;
+END;
+
+-- Associate the account with the profile.
+EXECUTE @rv=msdb.dbo.sysmail_add_profileaccount_sp
+    @profile_name = @profile_name,
+    @account_name = @account_name,
+    @sequence_number = 1 ;
+
+
+IF @rv<>0
+BEGIN
+    RAISERROR('Failed to associate the speficied profile with the specified account %s.', 16, 1,@account_name) ;
+	ROLLBACK TRANSACTION;
+    GOTO done;
+END;
+
+COMMIT TRANSACTION;
+
+done:
+
+GO
+
+--****************************************************************************************************************************************************************
+--4- This script will create sysAdminDB
+--****************************************************************************************************************************************************************
+USE master;
+GO	
+CREATE DATABASE [SYSADMINDB] 
+GO
+ALTER DATABASE [SYSADMINDB] SET RECOVERY SIMPLE 
+GO
+ALTER DATABASE [SYSADMINDB] MODIFY 
+FILE ( NAME = N'SYSADMINDB', SIZE = 512000KB , MAXSIZE = 1024000KB , FILEGROWTH = 102400KB )
+GO
+USE [SYSADMINDB]
+GO
+EXEC dbo.sp_changedbowner @loginame = N'sa', @map = false
+GO
+--Setting extended properties
+DECLARE @serviceTier NVARCHAR(128);
+DECLARE @partnerContactName NVARCHAR(128);
+DECLARE @partnerContactEmail NVARCHAR(128);
+
+SET @serviceTier = 'C3-12'
+SET @partnerContactName ='Sefaw'
+SET @partnerContactEmail = 'Sefaw.ghunsl@canada.ca'
+
+IF @serviceTier <> ''
+BEGIN 
+EXEC [sysadmindb].sys.sp_addextendedproperty @name=N'serviceTier', @value=@serviceTier
+END
+
+IF @partnerContactName <> ''
+BEGIN
+EXEC [sysadmindb].sys.sp_addextendedproperty @name=N'partnerContactName', @value=@partnerContactName
+END 
+
+IF @partnerContactEmail <> ''
+BEGIN 
+EXEC [sysadmindb].sys.sp_addextendedproperty @name=N'partnerContactEmail', @value=@partnerContactEmail 
+END
+GO
+
+USE [SYSADMINDB]
+GO
+/****** Object:  Table [dbo].[Tiers]    Script Date: 25/11/2015 1:09:31 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[Tiers](
+	[Tier] [nchar](10) NULL,
+	[vCPU] [smallint] NULL,
+	[Disk_GB] [int] NULL,
+	[MaxMemory_GB] [int] NULL
+) ON [PRIMARY]
+GO
+
+--****************************************************************************************************************************************************************
+-- 5- This script will add App accounts
+--****************************************************************************************************************************************************************
+USE [master]
+go
+
+-- For TADDM Discoveries 
+CREATE LOGIN [DS\TaddmWindows] FROM WINDOWS WITH DEFAULT_DATABASE=[master], 
+DEFAULT_LANGUAGE=[us_english]
+GO
+grant view any definition to [DS\TaddmWindows]
+create user [DS\TaddmWindows] FROm LOGIN [DS\TaddmWindows]
+ALTER ROLE [db_datareader] ADD MEMBER [DS\TaddmWindows]
+GO
+-- For CommVault
+CREATE LOGIN [DS\BackupSW] FROM WINDOWS WITH DEFAULT_DATABASE=[master], 
+DEFAULT_LANGUAGE=[us_english]
+GO
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [DS\BackupSW]
+GO
+-- CMS SQL Agent gMSA
+CREATE LOGIN [DS\sv-163-SQLCMSAG$] FROM WINDOWS WITH DEFAULT_DATABASE=[master], DEFAULT_LANGUAGE=[us_english]
+GO
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [DS\sv-163-SQLCMSAG$]
+GO
+/** 
+-- For Group DBAs, The group already exist
+USE [master]
+GO
+CREATE LOGIN [DS\Enterprise SQL Administrators] FROM WINDOWS WITH DEFAULT_DATABASE=[master], DEFAULT_LANGUAGE=[us_english]
+GO
+
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [DS\Enterprise SQL Administrators]
+GO
+**/
+--*************************************************************************************************************************
+-- 6- SCOM script to grant permission to SCOM server
+--*************************************************************************************************************************
+
+USE [master]
+SET NOCOUNT ON
+/*User account that System Center Operations Manager will use to access
+    Default is the Service SID for the HealthService*/
+DECLARE @accountname sysname = 'NT SERVICE\HealthService'
+-- Create the server role and grant permissions
+CREATE SERVER ROLE [SCOM_HealthService]
+GRANT VIEW ANY DATABASE TO [SCOM_HealthService];
+GRANT ALTER ANY DATABASE TO [SCOM_HealthService];
+GRANT VIEW ANY DEFINITION TO [SCOM_HealthService];
+GRANT VIEW SERVER STATE TO [SCOM_HealthService]
+DECLARE @createLoginCommand nvarchar(200)
+SET @createLoginCommand = '
+  CREATE LOGIN '+ QUOTENAME(@accountname) +
+  ' FROM WINDOWS WITH DEFAULT_DATABASE=[master];'
+EXEC(@createLoginCommand);
+-- Add the login to the user-defined server role
+EXEC sp_addsrvrolemember @loginame = @accountname
+  , @rolename = 'SCOM_HealthService'
+DECLARE @createDatabaseUserAndRole nvarchar(max)
+SET @createDatabaseUserAndRole = '';
+SELECT @createDatabaseUserAndRole = @createDatabaseUserAndRole + '
+  USE ' + QUOTENAME(db.name) + ';
+  CREATE USER ' + QUOTENAME(@accountname) +
+  ' FOR LOGIN ' + QUOTENAME(@accountname) + ';
+  CREATE ROLE [SCOM_HealthService];
+  EXEC sp_addrolemember @rolename =
+  ''SCOM_HealthService'', @membername
+  = '+ QUOTENAME(@accountname) + ''
+-- 'ALTER ROLE [SCOM_HealthService] ADD MEMBER '
+  -- '+ QUOTENAME(@accountname) + ';'
+FROM sys.databases db
+LEFT JOIN sys.dm_hadr_availability_replica_states hadrstate ON
+    db.replica_id = hadrstate.replica_id
+WHERE db.database_id <> 2
+    AND db.user_access = 0
+    AND db.state = 0
+    AND db.is_read_only = 0
+    AND (hadrstate.role = 1 or hadrstate.role is null);
+EXEC(@createDatabaseUserAndRole)
+GO
+USE [master];
+GRANT EXECUTE ON sys.xp_readerrorlog TO [SCOM_HealthService]
+USE [msdb];
+GRANT SELECT ON [dbo].[sysjobschedules] TO [SCOM_HealthService];
+GRANT SELECT ON [dbo].[sysschedules] TO [SCOM_HealthService];
+GRANT SELECT ON [dbo].[sysjobs_view] TO [SCOM_HealthService];
+GRANT SELECT ON [dbo].[syscategories] TO [SCOM_HealthService];
+GRANT SELECT ON [dbo].[log_shipping_primary_databases] TO [SCOM_HealthService];
+GRANT SELECT ON [dbo].[log_shipping_secondary_databases] TO [SCOM_HealthService];
+GRANT SELECT ON [dbo].[log_shipping_monitor_history_detail] TO [SCOM_HealthService];
+GRANT SELECT ON [dbo].[log_shipping_monitor_secondary] TO [SCOM_HealthService];
+GRANT SELECT ON [dbo].[log_shipping_monitor_primary] TO [SCOM_HealthService];
+GRANT EXECUTE ON [dbo].[sp_help_job] TO [SCOM_HealthService];
+GRANT EXECUTE ON [dbo].[sp_help_jobactivity] TO [SCOM_HealthService];
+GRANT EXECUTE ON [dbo].[SQLAGENT_SUSER_SNAME] TO [SCOM_HealthService];
+EXEC sp_addrolemember @rolename='PolicyAdministratorRole', @membername='SCOM_HealthService';
+EXEC sp_addrolemember @rolename='SQLAgentReaderRole', @membername='SCOM_HealthService';
